@@ -1,0 +1,35 @@
+name: chatbot_rag
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - python-dotenv
+  - scikit-learn
+  - scipy
+  - sqlalchemy
+  - "pyarrow<15"
+  - sentence-transformers
+  - pytorch
+  - torchvision
+  - cpuonly
+  - pip:
+      - langchain==0.3.13
+      - langchain_community==0.3.13
+      - langchain_openai==0.2.14
+      - langchain_text_splitters==0.3.4
+      - langchainhub==0.1.21
+      - langchain_core==0.3.28
+      - chromadb>=0.5.0
+      - huggingface-hub>=0.23.0
+      - openai==1.58.1
+      - streamlit==1.41.1
+      - tiktoken>=0.7.0
+      - rank-bm25>=0.2.2
+      - requests==2.32.3
+      - pydantic==2.10.6
+      - pypdf==5.1.0
+      - fastembed==0.4.2

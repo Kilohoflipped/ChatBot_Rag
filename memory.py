@@ -49,53 +49,14 @@ class SimpleTextRetriever(BaseRetriever):
 
     @classmethod
     def from_texts(
-            cls,
-            texts: Iterable[str],
-            **kwargs: Any,
+        cls,
+        texts: Iterable[str],
+        **kwargs: Any,
     ):
         docs = [Document(page_content=t) for t in texts]
         return cls(docs=docs, **kwargs)
 
     def _get_relevant_documents(
-            self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> List[Document]:
         return self.docs
-
-
-def main():
-    load_dotenv()
-    model = get_model("ChatGPT")
-    chat_memory = ChatMessageHistory()
-
-    system_prompt = "You are a helpful AI assistant for busy professionals trying to improve their health."
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{question}"),
-        ]
-    )
-
-    text_path = "examples/grocery.md"
-    text = open(text_path, "r").read()
-    retriever = SimpleTextRetriever.from_texts([text])
-    rag_chain = make_rag_chain(model, retriever, rag_prompt=None)
-    chain = create_memory_chain(model, rag_chain, chat_memory) | StrOutputParser()
-    queries = [
-        "What do I need to get from the grocery store besides milk?",
-        "Which of these items can I find at a farmer's market?",
-    ]
-
-    for query in queries:
-        print(f"\nQuestion: {query}")
-        response = chain.invoke(
-            {"question": query},
-            config={"configurable": {"session_id": "foo"}}
-        )
-        print(f"Answer: {response}")
-
-
-if __name__ == "__main__":
-    # this is to quite parallel tokenizers warning.
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    main()

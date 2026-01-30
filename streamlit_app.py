@@ -1,16 +1,28 @@
+import json
+import os
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import streamlit as st
 from langchain_community.chat_message_histories import StreamlitChatMessageHistory
-from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.retrievers import BM25Retriever
+from langchain_community.vectorstores import Chroma
+from langchain.retrievers import EnsembleRetriever
 
-from ensemble import ensemble_retriever_from_docs
 from full_chain import create_full_chain, ask_question
-from local_loader import load_txt_files
+from vector_store import DEFAULT_EMBEDDING_MODEL
 
-st.set_page_config(page_title="LangChain & Streamlit RAG")
-st.title("LangChain & Streamlit RAG")
+STORE_DIR = "store"
+CHROMA_COLLECTION = "chroma"
+CHROMA_PERSIST_PATH = os.path.join(STORE_DIR, CHROMA_COLLECTION)
+CHUNK_TEXTS_PATH = os.path.join(STORE_DIR, "chunk_texts.json")
+
+st.set_page_config(page_title="学业小助手")
+st.title("学业小助手")
 
 
-def show_ui(qa, prompt_to_user="How may I help you?"):
+def show_ui(qa, prompt_to_user="有什么可以帮您？"):
     if "messages" not in st.session_state.keys():
         st.session_state.messages = [{"role": "assistant", "content": prompt_to_user}]
 
@@ -28,69 +40,83 @@ def show_ui(qa, prompt_to_user="How may I help you?"):
     # Generate a new response if last message is not from assistant
     if st.session_state.messages[-1]["role"] != "assistant":
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
+            with st.spinner("思考中..."):
                 response = ask_question(qa, prompt)
                 st.markdown(response.content)
         message = {"role": "assistant", "content": response.content}
         st.session_state.messages.append(message)
 
 
+def _prebuilt_exists():
+    return os.path.isdir(CHROMA_PERSIST_PATH) and os.path.isfile(CHUNK_TEXTS_PATH)
+
+
 @st.cache_resource
-def get_retriever(openai_api_key=None):
-    docs = load_txt_files()
-    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key, model="text-embedding-3-small")
-    return ensemble_retriever_from_docs(docs, embeddings=embeddings)
+def get_retriever():
+    if not _prebuilt_exists():
+        st.error(
+            "未检测到已建好的向量库。请先在终端运行：`python build_db.py` 建库后再刷新本页。"
+        )
+        st.stop()
+    embeddings = HuggingFaceEmbeddings(model_name=DEFAULT_EMBEDDING_MODEL)
+    db = Chroma(
+        collection_name=CHROMA_COLLECTION,
+        embedding_function=embeddings,
+        persist_directory=CHROMA_PERSIST_PATH,
+    )
+    vs_retriever = db.as_retriever()
+    with open(CHUNK_TEXTS_PATH, "r", encoding="utf-8") as f:
+        chunk_texts = json.load(f)
+    bm25_retriever = BM25Retriever.from_texts(chunk_texts)
+    return EnsembleRetriever(
+        retrievers=[bm25_retriever, vs_retriever], weights=[0.5, 0.5]
+    )
 
 
-def get_chain(openai_api_key=None, huggingfacehub_api_token=None):
-    ensemble_retriever = get_retriever(openai_api_key=openai_api_key)
-    chain = create_full_chain(ensemble_retriever,
-                              openai_api_key=openai_api_key,
-                              chat_memory=StreamlitChatMessageHistory(key="langchain_messages"))
+def get_chain(deepseek_api_key=None):
+    ensemble_retriever = get_retriever()
+    chain = create_full_chain(
+        ensemble_retriever,
+        openai_api_key=deepseek_api_key,
+        chat_memory=StreamlitChatMessageHistory(key="langchain_messages"),
+    )
     return chain
 
 
 def get_secret_or_input(secret_key, secret_name, info_link=None):
     if secret_key in st.secrets:
-        st.write("Found %s secret" % secret_key)
+        st.write("已找到API Key")
         secret_value = st.secrets[secret_key]
     else:
-        st.write(f"Please provide your {secret_name}")
-        secret_value = st.text_input(secret_name, key=f"input_{secret_key}", type="password")
+        st.write(f"请输入您的 {secret_name}")
+        secret_value = st.text_input(
+            secret_name, key=f"input_{secret_key}", type="password"
+        )
         if secret_value:
             st.session_state[secret_key] = secret_value
         if info_link:
-            st.markdown(f"[Get an {secret_name}]({info_link})")
+            st.markdown(f"[获取 {secret_name}]({info_link})")
     return secret_value
 
 
 def run():
-    ready = True
-
-    openai_api_key = st.session_state.get("OPENAI_API_KEY")
-    huggingfacehub_api_token = st.session_state.get("HUGGINGFACEHUB_API_TOKEN")
+    deepseek_api_key = st.session_state.get("DEEPSEEK_API_KEY")
 
     with st.sidebar:
-        if not openai_api_key:
-            openai_api_key = get_secret_or_input('OPENAI_API_KEY', "OpenAI API key",
-                                                 info_link="https://platform.openai.com/account/api-keys")
-        if not huggingfacehub_api_token:
-            huggingfacehub_api_token = get_secret_or_input('HUGGINGFACEHUB_API_TOKEN', "HuggingFace Hub API Token",
-                                                           info_link="https://huggingface.co/docs/huggingface_hub/main/en/quick-start#authentication")
+        if not deepseek_api_key:
+            deepseek_api_key = get_secret_or_input(
+                "DEEPSEEK_API_KEY",
+                "DeepSeek API 密钥",
+                info_link="https://platform.deepseek.com/api_keys",
+            )
 
-    if not openai_api_key:
-        st.warning("Missing OPENAI_API_KEY")
-        ready = False
-    if not huggingfacehub_api_token:
-        st.warning("Missing HUGGINGFACEHUB_API_TOKEN")
-        ready = False
-
-    if ready:
-        chain = get_chain(openai_api_key=openai_api_key, huggingfacehub_api_token=huggingfacehub_api_token)
-        st.subheader("Ask me questions about this week's meal plan")
-        show_ui(chain, "What would you like to know?")
-    else:
+    if not deepseek_api_key:
+        st.warning("缺少 DEEPSEEK_API_KEY")
         st.stop()
+
+    chain = get_chain(deepseek_api_key=deepseek_api_key)
+    st.subheader("向我提问本校学业、选课、GPA、考试等相关问题")
+    show_ui(chain, "你好呀～选课、成绩、考试这些学业上的事都可以问我。")
 
 
 run()

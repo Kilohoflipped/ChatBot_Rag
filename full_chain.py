@@ -12,10 +12,15 @@ from rag_chain import make_rag_chain
 
 
 def create_full_chain(retriever, openai_api_key=None, chat_memory=ChatMessageHistory()):
-    model = get_model("ChatGPT", openai_api_key=openai_api_key)
-    system_prompt = """You are a helpful AI assistant for busy professionals trying to improve their health.
-    Use the following context and the users' chat history to help the user:
-    If you don't know the answer, just say that you don't know. 
+    model = get_model(openai_api_key=openai_api_key)
+    system_prompt = """你是一位专门为西北工业大学(NWPU)学生提供咨询的 AI 助手。
+    请结合下文提供的教务管理规定、选课办法、GPA计算规则及校园生活指南, 以及用户的聊天记录来回答问题。
+    
+    要求：
+    1. 必须基于提供的上下文(Context)进行回答。
+    2. 如果上下文中没有相关信息，请直接回答“抱歉，根据目前的文档库我无法回答该问题”，不要编造政策。
+    3. 回答语调应专业、严谨且富有帮助。
+    4. 回答内无需指出具体资料的名字，直接说“根据资料库”即可
     
     Context: {context}
     
@@ -35,34 +40,6 @@ def create_full_chain(retriever, openai_api_key=None, chat_memory=ChatMessageHis
 
 def ask_question(chain, query):
     response = chain.invoke(
-        {"question": query},
-        config={"configurable": {"session_id": "foo"}}
+        {"question": query}, config={"configurable": {"session_id": "foo"}}
     )
     return response
-
-
-def main():
-    load_dotenv()
-
-    from rich.console import Console
-    from rich.markdown import Markdown
-    console = Console()
-
-    docs = load_txt_files()
-    ensemble_retriever = ensemble_retriever_from_docs(docs)
-    chain = create_full_chain(ensemble_retriever)
-
-    queries = [
-        "Generate a grocery list for my family meal plan for the next week(following 7 days). Prefer local, in-season ingredients."
-        "Create a list of estimated calorie counts and grams of carbohydrates for each meal."
-    ]
-
-    for query in queries:
-        response = ask_question(chain, query)
-        console.print(Markdown(response.content))
-
-
-if __name__ == '__main__':
-    # this is to quiet parallel tokenizers warning.
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    main()
