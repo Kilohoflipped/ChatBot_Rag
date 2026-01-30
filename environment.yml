@@ -1,4 +1,4 @@
-name: chatbot_rag
+name: chatbot_npu_rag
 channels:
   - pytorch
   - conda-forge
